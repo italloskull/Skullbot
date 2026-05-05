@@ -151,7 +151,7 @@ def send_webhook(title, link, image_url=None, description=None):
         "title": "🎮 Novo Jogo Postado!",
         "description": desc_text,
         "color": 7506394,  # Cor roxa/azul escuro
-        "footer": {"text": "Monitor de Jogos Automático"}
+        "footer": {"text": "SkuLL Bot"}
     }
 
     if image_url:
