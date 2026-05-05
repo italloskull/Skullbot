@@ -1,0 +1,11 @@
+# Ignorar o script de automação local
+setup_github.bat
+
+# Ambientes virtuais e variáveis locais
+venv/
+env/
+.env
+
+# Arquivos de cache do Python
+__pycache__/
+*.pyc
