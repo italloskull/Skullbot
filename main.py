@@ -11,7 +11,7 @@ SITE_URL = "https://online-fix.me/"
 LAST_GAME_FILE = "last_game.txt"
 TEST_MODE = False  # Desativado para o bot rodar normalmente na nuvem
 
-def get_latest_game():
+def get_latest_games(last_known_link):
     try:
         # Usamos cabeçalhos customizados completos para simular um navegador real
         headers = {
@@ -24,51 +24,50 @@ def get_latest_game():
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        img_element = None
         # Procura por todas as tags de data/hora na página
         time_elements = soup.find_all('time', datetime=True)
 
+        new_games = []
         if time_elements:
-            # Encontra a tag <time> com a data mais recente (maior valor de datetime)
-            # O formato ISO 8601 (Ex: 2026-05-04T15:59:52) permite ordenar perfeitamente por texto
-            newest_time_element = max(time_elements, key=lambda t: t.get('datetime'))
+            # Ordena do mais recente (agora) para o mais antigo
+            time_elements = sorted(time_elements, key=lambda t: t.get('datetime'), reverse=True)
 
-            # Sobe na árvore HTML a partir da tag de tempo MAIS RECENTE para encontrar a "caixa" (container)
-            current_parent = newest_time_element.parent
-            while current_parent and current_parent.name not in ['body', 'html']:
-                possible_img = current_parent.find('img', src=lambda s: s and '/uploads/posts/' in s)
-                if possible_img:
-                    img_element = possible_img
-                    break
-                current_parent = current_parent.parent
+            for time_element in time_elements:
+                img_element = None
+                current_parent = time_element.parent
+                while current_parent and current_parent.name not in ['body', 'html']:
+                    possible_img = current_parent.find('img', src=lambda s: s and '/uploads/posts/' in s)
+                    if possible_img:
+                        img_element = possible_img
+                        break
+                    current_parent = current_parent.parent
 
-        # Fallback de segurança: se não achar a tag de tempo, volta a pegar a primeira imagem do site
-        if not img_element:
-            img_element = soup.find('img', src=lambda s: s and '/uploads/posts/' in s)
+                if img_element:
+                    link_element = img_element.find_parent('a')
+                    if link_element:
+                        title = link_element.get('title') or img_element.get('alt') or link_element.text.strip()
+                        link = link_element.get('href')
+                        if link and link.startswith('/'):
+                            link = f"https://online-fix.me{link}"
 
-        if img_element:
-            # Pega a tag de link (<a>) que envolve essa imagem
-            link_element = img_element.find_parent('a')
-            if link_element:
-                # Tenta pegar o título pelo atributo title do <a> ou alt da imagem
-                title = link_element.get('title') or img_element.get('alt') or link_element.text.strip()
-                
-                link = link_element.get('href')
-                # Corrige o link caso ele venha relativo (começando com /)
-                if link and link.startswith('/'):
-                    link = f"https://online-fix.me{link}"
+                        # Se o link bater com o último jogo que o bot lembra, ele para de procurar na hora!
+                        if link == last_known_link and not TEST_MODE:
+                            break
 
-                image_url = img_element.get('src')
-                # Corrige a imagem caso venha relativa
-                if image_url and image_url.startswith('/'):
-                    image_url = f"https://online-fix.me{image_url}"
-                    
-                return title, link, image_url
+                        image_url = img_element.get('src')
+                        if image_url and image_url.startswith('/'):
+                            image_url = f"https://online-fix.me{image_url}"
+
+                        new_games.append({"title": title, "link": link, "image_url": image_url})
+
+            # Inverte a lista para mandar no Discord do mais velho (primeiro que saiu) para o mais novo
+            new_games.reverse()
+            return new_games
 
     except Exception as e:
         print(f"Erro ao fazer scraping do site: {e}")
         traceback.print_exc()
-    return None, None, None
+    return []
 
 def get_game_description(game_url):
     headers = {
@@ -167,27 +166,31 @@ def send_webhook(title, link, image_url=None, description=None):
 
 def main():
     print("🚀 Iniciando a nova versão do bot (sem cloudscraper)...")
-    title, link, image_url = get_latest_game()
-    if not title or not link:
-        print("Nenhum jogo encontrado. Verifique se o layout do site mudou.")
-        sys.exit(1)
 
     last_game_link = ""
     if os.path.exists(LAST_GAME_FILE):
         with open(LAST_GAME_FILE, 'r', encoding='utf-8') as f:
             last_game_link = f.read().strip()
 
-    # Se a URL for diferente do nosso último registro (ou se estivermos no MODO DE TESTE), envia o Webhook
-    if link != last_game_link or TEST_MODE:
-        print(f"Novo jogo detectado: {title}")
+    new_games = get_latest_games(last_game_link)
+    
+    if not new_games:
+        print("Nenhum jogo novo detectado.")
+        return
+        
+    # Se for a primeira vez rodando, pega só o mais recente para não inundar o Discord com 15 jogos de uma vez
+    if not last_game_link or TEST_MODE:
+        new_games = [new_games[-1]]
+
+    for game in new_games:
+        print(f"Novo jogo detectado: {game['title']}")
         print("Buscando descrição na página do jogo...")
-        description = get_game_description(link)
-        if send_webhook(title, link, image_url, description):
-            # Atualiza o arquivo de memória local com o novo link
+        description = get_game_description(game['link'])
+        
+        if send_webhook(game['title'], game['link'], game['image_url'], description):
+            # Atualiza a memória com o link de CADA jogo enviado com sucesso
             with open(LAST_GAME_FILE, 'w', encoding='utf-8') as f:
-                f.write(link)
-    else:
-        print(f"Nenhum novo jogo. O último monitorado ainda é: {title}")
+                f.write(game['link'])
 
 if __name__ == "__main__":
     main()
