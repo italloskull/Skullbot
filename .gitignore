@@ -1,5 +1,6 @@
 # Ignorar o script de automação local
 setup_github.bat
+update_github.bat
 
 # Ambientes virtuais e variáveis locais
 venv/
