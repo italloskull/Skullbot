@@ -36,10 +36,13 @@ def get_latest_games(last_known_link):
                 img_element = None
                 current_parent = time_element.parent
                 while current_parent and current_parent.name not in ['body', 'html']:
-                    possible_img = current_parent.find('img', src=lambda s: s and '/uploads/posts/' in s)
+                    # Flexibiliza a busca: suporta lazy loading (data-src) e ignora a exigência da pasta exata
+                    possible_img = current_parent.find('img')
                     if possible_img:
-                        img_element = possible_img
-                        break
+                        src = possible_img.get('data-src') or possible_img.get('src') or ""
+                        if '/uploads/' in src or 'post' in src or possible_img.get('alt'):
+                            img_element = possible_img
+                            break
                     current_parent = current_parent.parent
 
                 if img_element:
@@ -54,7 +57,7 @@ def get_latest_games(last_known_link):
                         if link == last_known_link and not TEST_MODE:
                             break
 
-                        image_url = img_element.get('src')
+                        image_url = img_element.get('data-src') or img_element.get('src')
                         if image_url and image_url.startswith('/'):
                             image_url = f"https://online-fix.me{image_url}"
 
@@ -65,7 +68,7 @@ def get_latest_games(last_known_link):
             return new_games
 
     except Exception as e:
-        print(f"Erro ao fazer scraping do site: {e}")
+        print(f"Erro ao fazer scraping do site (possível bloqueio Cloudflare): {e}")
         traceback.print_exc()
     return []
 
